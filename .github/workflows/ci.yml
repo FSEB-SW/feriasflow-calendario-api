@@ -1,11 +1,16 @@
 # Pipeline minimo (D3 - Primeira Maneira: fluxo automatizado com feedback rapido)
 # 1) testes (unitarios, integracao simulada e contrato)  2) build da imagem + smoke test
+# 3) na main: publica a imagem no GitHub Container Registry (artefato que o compose da API
+#    principal consome: ghcr.io/fseb-sw/feriasflow-calendario-api)
 name: CI
 
 on:
   push:
     branches: ["**"]
   pull_request:
+
+env:
+  IMAGEM: ghcr.io/fseb-sw/feriasflow-calendario-api
 
 jobs:
   testes:
@@ -36,3 +41,25 @@ jobs:
           done
           docker logs api
           exit 1
+
+  publicar:
+    name: Publicar imagem no GHCR (main)
+    needs: imagem
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build e push (latest + sha)
+        run: |
+          docker build -t "$IMAGEM:latest" -t "$IMAGEM:${GITHUB_SHA::7}" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" .
+          docker push "$IMAGEM:latest"
+          docker push "$IMAGEM:${GITHUB_SHA::7}"
